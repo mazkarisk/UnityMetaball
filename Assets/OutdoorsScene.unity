@@ -408,7 +408,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!43 &1024451215
+--- !u!43 &812364921
 Mesh:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -876,7 +876,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1898735909}
-  m_Mesh: {fileID: 1024451215}
+  m_Mesh: {fileID: 812364921}
 --- !u!4 &1898735912
 Transform:
   m_ObjectHideFlags: 0
@@ -904,6 +904,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: de000e42de46888408bf9b4b8f8f9345, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  material: {fileID: -876546973899608171, guid: 58123a06185cff748b8dc785acf8d828, type: 3}
+  smoothWidth: 0.2
+  maxMarchCount: 256
+  hitThreshold: 0.001
+  debugViewEnable: 0
 --- !u!1 &2013410473
 GameObject:
   m_ObjectHideFlags: 1
