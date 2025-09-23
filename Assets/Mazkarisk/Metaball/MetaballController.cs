@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 
 public class MetaballController : MonoBehaviour {
@@ -21,10 +23,16 @@ public class MetaballController : MonoBehaviour {
 	private readonly Vector4[] _spheres = new Vector4[MAX_SPHERE_COUNT];
 	ComputeBuffer spheresBuffer = null;
 
-	int sphereCount = 1024;
+	int sphereCount = 2048;
 	GameObject[] sphereObjects = new GameObject[MAX_SPHERE_COUNT];
 	Rigidbody[] sphereRigidbodies = new Rigidbody[MAX_SPHERE_COUNT];
 	SphereCollider[] sphereColliders = new SphereCollider[MAX_SPHERE_COUNT];
+
+	// 非同期処理用
+	List<Vector3> spherePositions = null;
+	List<float> sphereRadiuses = null;
+	List<int[]> nearbyPairs = null;
+	bool isListNearbyPairsRunning = false;
 
 	void Start() {
 		GetComponent<MeshFilter>().sharedMesh = CreateMeshForFullScreenEffect();
@@ -36,10 +44,9 @@ public class MetaballController : MonoBehaviour {
 
 			sphereObjects[i] = new GameObject("MetaballSphere" + i);
 			sphereObjects[i].transform.parent = transform;
-			sphereRigidbodies[i] = sphereObjects[i].AddComponent<Rigidbody>();
 			sphereColliders[i] = sphereObjects[i].AddComponent<SphereCollider>();
 			sphereColliders[i].radius = radius * 0.5f; // 当たり判定の半径は半分にしておく
-
+			sphereRigidbodies[i] = sphereObjects[i].AddComponent<Rigidbody>();
 			RespawnBall(i);
 		}
 
@@ -50,7 +57,7 @@ public class MetaballController : MonoBehaviour {
 	void Update() {
 		for (var i = 0; i < sphereCount; i++) {
 			// 中心座標と半径を格納
-			Vector3 position = sphereRigidbodies[i].position;
+			Vector3 position = sphereObjects[i].transform.position;
 			float radius = sphereColliders[i].radius * 2f;
 			_spheres[i] = new Vector4(position.x, position.y, position.z, radius);
 		}
@@ -67,37 +74,79 @@ public class MetaballController : MonoBehaviour {
 	}
 
 	void FixedUpdate() {
-		System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
+		System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
 		logText = "";
 
-		// リスポーン処理と最大速度の調査
-		sw.Restart();
-		float maxVelocity = 0f;
+		// リスポーン処理
+		stopwatch.Restart();
+		List<Vector3> tempPositions = new List<Vector3>();
+		List<float> tempRadiuses = new List<float>();
 		for (var i = 0; i < sphereCount; i++) {
-			if (sphereRigidbodies[i].linearVelocity.magnitude > maxVelocity) {
-				maxVelocity = sphereRigidbodies[i].linearVelocity.magnitude;
-			}
-
-			// 落ちたボールをリスポーン
-			if (sphereRigidbodies[i].position.y < -10) {
+			Vector3 position = sphereRigidbodies[i].position;
+			float radius = sphereColliders[i].radius * 2f;
+			tempPositions.Add(position);
+			tempRadiuses.Add(radius);
+			// 一定以上落ちたボールはリスポーン
+			if (position.y < -10) {
 				RespawnBall(i);
 			}
 		}
-		sw.Stop();
-		logText += "リスポーン処理の時間：" + sw.Elapsed.TotalMilliseconds + " ms\n";
+		stopwatch.Stop();
+		logText += "リスポーン処理の時間：" + stopwatch.Elapsed.TotalMilliseconds + " ms\n";
+
+		spherePositions = tempPositions;
+		sphereRadiuses = tempRadiuses;
+
+		// 非同期処理で近接するペアを探索する
+		Task.Run(ListNearbyPairs);
+
+		if (nearbyPairs != null) {
+			logText += "tempNearbyPairs : " + nearbyPairs.Count + "\n";
+			stopwatch.Restart();
+
+			List<int[]> tempNearbyPairs = new List<int[]>(nearbyPairs);
+			for (int i = 0; i < tempNearbyPairs.Count; i++) {
+				int indexA = tempNearbyPairs[i][0];
+				int indexB = tempNearbyPairs[i][1];
+
+				Vector3 positionA = sphereRigidbodies[indexA].position;
+				Vector3 positionB = sphereRigidbodies[indexB].position;
+
+				Vector3 diffAB = positionB - positionA;
+				Vector3 directionAB = diffAB.normalized;
+				float magnitude = diffAB.magnitude;
+				float sumRadius = sphereRadiuses[indexA] + sphereRadiuses[indexB];
+
+				if (magnitude < sumRadius * 2) {
+					// 引力・斥力を発生させる
+					float x = magnitude / sumRadius;
+					float f = 4f * (x - 1.5f) * (x - 1.5f) - 1f;
+					sphereRigidbodies[indexA].AddForce(-directionAB * f * 0.02f, ForceMode.Acceleration);
+					sphereRigidbodies[indexB].AddForce(directionAB * f * 0.02f, ForceMode.Acceleration);
+				}
+			}
+
+			stopwatch.Stop();
+			logText += "近接ペアの処理時間：" + stopwatch.Elapsed.TotalMilliseconds + " ms\n";
+		}
 	}
 
 	private string logText = "";
 	private void OnGUI() {
-		// ログのテキストをスタイルに設定
+
+		string text = logText + logTextListNearbyPairs;
+
+		// ログのテキストスタイルを設定
 		GUIStyle guiStyleBack = new GUIStyle();
 		guiStyleBack.fontSize = 20;
 		guiStyleBack.normal.textColor = Color.black;
 		GUIStyle guiStyleFront = new GUIStyle();
 		guiStyleFront.fontSize = 20;
 		guiStyleFront.normal.textColor = Color.white;
-		GUI.Label(new Rect(12, 12, Screen.width, Screen.height), logText, guiStyleBack);
-		GUI.Label(new Rect(10, 10, Screen.width, Screen.height), logText, guiStyleFront);
+
+		// 画面上にログ出力
+		GUI.Label(new Rect(12, 12, Screen.width, Screen.height), text, guiStyleBack);
+		GUI.Label(new Rect(10, 10, Screen.width, Screen.height), text, guiStyleFront);
 	}
 
 	/// <summary>
@@ -136,9 +185,46 @@ public class MetaballController : MonoBehaviour {
 		Vector3 position = new Vector3(insideUnitCircle.x, Random.Range(10f, 50f), insideUnitCircle.y);
 		Quaternion rotation = Random.rotation;
 
-		sphereObjects[index].transform.SetLocalPositionAndRotation(position, rotation);
-		sphereRigidbodies[index].linearDamping = 1.5f;  // FixedTime設定にもよるが、終端速度は6.3m/sくらいになる
-		sphereRigidbodies[index].linearVelocity = Vector3.down * 6.3f;
+		sphereRigidbodies[index].position = position;
+		sphereRigidbodies[index].rotation = rotation;
+		sphereRigidbodies[index].linearDamping = 1.5f;  // FixedTime設定にもよるが、終端速度は6m/sくらいになる
+		sphereRigidbodies[index].linearVelocity = Vector3.down * 6f;
 		sphereRigidbodies[index].angularVelocity = Vector3.zero;
+		sphereRigidbodies[index].interpolation = RigidbodyInterpolation.Interpolate;
+	}
+
+	string logTextListNearbyPairs = "";
+	/// <summary>
+	/// 非同期処理で近接するペアを探索する
+	/// </summary>
+	private async Task ListNearbyPairs() {
+		// 二重起動防止
+		if (isListNearbyPairsRunning) {
+			return;
+		}
+		isListNearbyPairsRunning = true;
+
+		System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
+		stopwatch.Restart();
+		List<Vector3> tempSpherePositions = new List<Vector3>(spherePositions);
+		List<float> tempSphereRadiuses = new List<float>(sphereRadiuses);
+		List<int[]> tempNearbyPairs = new List<int[]>();
+		for (var i = 0; i < tempSpherePositions.Count; i++) {
+			for (var j = i; j < tempSpherePositions.Count; j++) {
+				Vector3 diff = tempSpherePositions[i] - tempSpherePositions[j];
+				float sumRadius = tempSphereRadiuses[i] + tempSphereRadiuses[j];
+				float sqrDistance = (sumRadius * 2) * (sumRadius * 2);
+				if (diff.sqrMagnitude <= sqrDistance) {
+					tempNearbyPairs.Add(new int[] { i, j });
+				}
+			}
+		}
+		nearbyPairs = tempNearbyPairs;
+		stopwatch.Stop();
+
+		// ログを更新
+		logTextListNearbyPairs = "ListNearbyPairs : " + stopwatch.Elapsed.TotalMilliseconds + " ms\n";
+
+		isListNearbyPairsRunning = false;
 	}
 }
