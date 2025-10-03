@@ -102,10 +102,10 @@ public class MetaballController : MonoBehaviour {
 
 		// グリッドの中心と大きさを算出
 		Vector3 gridCenter = (min + max) * 0.5f;
-		Vector3 wholeGridSize = Vector3.Max(max - min, Vector3.one * (SPHERE_FORCE_RADIUS * GRID_DIVISION)); // 一つ隣のグリッドまで見れば済むようにサイズを調整
-		min = gridCenter - wholeGridSize * 0.5f;
-		max = gridCenter + wholeGridSize * 0.5f;
-		Vector3 singleGridSize = wholeGridSize / GRID_DIVISION;
+		Vector3 gridSize = Vector3.Max(max - min, Vector3.one * (SPHERE_FORCE_RADIUS * GRID_DIVISION)); // 一つ隣のグリッドまで見れば済むようにサイズを調整
+		min = gridCenter - gridSize * 0.5f;
+		max = gridCenter + gridSize * 0.5f;
+		Vector3 gridCellSize = gridSize / GRID_DIVISION;
 
 		// グリッド初期化
 		stopwatch.Restart();
@@ -121,15 +121,15 @@ public class MetaballController : MonoBehaviour {
 		// グリッド格納処理
 		stopwatch.Restart();
 		for (int i = 0; i < sphereCount; i++) {
-			// グリッド内格子IDの特定
-			Vector3 gridPosition = spherePositions[i] - min;
-			int x = Mathf.Clamp((int)(gridPosition.x / singleGridSize.x), 0, GRID_DIVISION - 1);
-			int y = Mathf.Clamp((int)(gridPosition.y / singleGridSize.y), 0, GRID_DIVISION - 1);
-			int z = Mathf.Clamp((int)(gridPosition.z / singleGridSize.z), 0, GRID_DIVISION - 1);
-			int indexInGrid = GetIndexInGrid(x, y, z);
+			// グリッド内セルIDの特定
+			Vector3 positionInGrid = spherePositions[i] - min;
+			int x = Mathf.Clamp((int)(positionInGrid.x / gridCellSize.x), 0, GRID_DIVISION - 1);
+			int y = Mathf.Clamp((int)(positionInGrid.y / gridCellSize.y), 0, GRID_DIVISION - 1);
+			int z = Mathf.Clamp((int)(positionInGrid.z / gridCellSize.z), 0, GRID_DIVISION - 1);
+			int cellIndex = GetCellIndex(x, y, z);
 
-			// グリッドに追加
-			sortedSpheres[indexInGrid].Add(i);
+			// セルに追加
+			sortedSpheres[cellIndex].Add(i);
 		}
 		stopwatch.Stop();
 		logText += "グリッド格納処理の時間 : " + stopwatch.Elapsed.TotalMilliseconds + " ms\n";
@@ -138,13 +138,13 @@ public class MetaballController : MonoBehaviour {
 		int maxLoopCount = 0;
 		int actualPairCount = 0;
 		for (int i = 0; i < sphereCount; i++) {
-			// グリッド内格子IDの特定
-			Vector3 gridPosition = spherePositions[i] - min;
-			int x = Mathf.Clamp((int)(gridPosition.x / singleGridSize.x), 0, GRID_DIVISION - 1);
-			int y = Mathf.Clamp((int)(gridPosition.y / singleGridSize.y), 0, GRID_DIVISION - 1);
-			int z = Mathf.Clamp((int)(gridPosition.z / singleGridSize.z), 0, GRID_DIVISION - 1);
+			// グリッド内セルIDの特定
+			Vector3 positionInGrid = spherePositions[i] - min;
+			int x = Mathf.Clamp((int)(positionInGrid.x / gridCellSize.x), 0, GRID_DIVISION - 1);
+			int y = Mathf.Clamp((int)(positionInGrid.y / gridCellSize.y), 0, GRID_DIVISION - 1);
+			int z = Mathf.Clamp((int)(positionInGrid.z / gridCellSize.z), 0, GRID_DIVISION - 1);
 
-			// 対象となる格子の範囲
+			// 対象となるセルの範囲
 			int xStart = Mathf.Clamp(x - 1, 0, GRID_DIVISION - 1);
 			int yStart = Mathf.Clamp(y - 1, 0, GRID_DIVISION - 1);
 			int zStart = Mathf.Clamp(z - 1, 0, GRID_DIVISION - 1);
@@ -152,38 +152,43 @@ public class MetaballController : MonoBehaviour {
 			int yEnd = Mathf.Clamp(y + 1, 0, GRID_DIVISION - 1);
 			int zEnd = Mathf.Clamp(z + 1, 0, GRID_DIVISION - 1);
 
-			// 格子の境界から十分に離れている場合は、その方向の格子は判定対象外とする。
-			if (gridPosition.x > SPHERE_FORCE_RADIUS) {
+			// セルの境界から十分に離れている場合は、その方向のセルは判定対象外とする。
+			Vector3 positionInCell = new Vector3(
+				Mathf.Repeat(positionInGrid.x, gridCellSize.x),
+				Mathf.Repeat(positionInGrid.y, gridCellSize.y),
+				Mathf.Repeat(positionInGrid.z, gridCellSize.z));
+
+			if (positionInCell.x > SPHERE_FORCE_RADIUS) {
 				xStart = x;
 			}
-			if (gridPosition.y > SPHERE_FORCE_RADIUS) {
+			if (positionInCell.y > SPHERE_FORCE_RADIUS) {
 				yStart = y;
 			}
-			if (gridPosition.z > SPHERE_FORCE_RADIUS) {
+			if (positionInCell.z > SPHERE_FORCE_RADIUS) {
 				zStart = z;
 			}
-			if (gridPosition.x - singleGridSize.x < -SPHERE_FORCE_RADIUS) {
+			if (positionInCell.x < gridCellSize.x - SPHERE_FORCE_RADIUS) {
 				xEnd = x;
 			}
-			if (gridPosition.y - singleGridSize.y < -SPHERE_FORCE_RADIUS) {
+			if (positionInCell.y < gridCellSize.y - SPHERE_FORCE_RADIUS) {
 				yEnd = y;
 			}
-			if (gridPosition.z - singleGridSize.z < -SPHERE_FORCE_RADIUS) {
+			if (positionInCell.z < gridCellSize.z - SPHERE_FORCE_RADIUS) {
 				zEnd = z;
 			}
 
 			for (int zIndex = zStart; zIndex <= zEnd; zIndex++) {
 				for (int yIndex = yStart; yIndex <= yEnd; yIndex++) {
 					for (int xIndex = xStart; xIndex <= xEnd; xIndex++) {
-						int indexInGrid = GetIndexInGrid(xIndex, yIndex, zIndex);
-						if (sortedSpheres[indexInGrid] == null) {
+						int cellIndex = GetCellIndex(xIndex, yIndex, zIndex);
+						if (sortedSpheres[cellIndex] == null) {
 							continue;
 						}
-						for (int j = 0; j < sortedSpheres[indexInGrid].Count; j++) {
+						for (int j = 0; j < sortedSpheres[cellIndex].Count; j++) {
 							maxLoopCount++;
 
 							int myIndex = i;
-							int otherIndex = sortedSpheres[indexInGrid][j];
+							int otherIndex = sortedSpheres[cellIndex][j];
 							// 自分自身は対象外とする
 							if (myIndex == otherIndex) {
 								continue;
@@ -261,6 +266,7 @@ public class MetaballController : MonoBehaviour {
 				continue;
 			}
 
+			// 加速度の方向を描画
 			Vector3 position = sphereObjects[i].transform.position;
 			Vector3 acceleration = sphereAccelerations[i];
 			if (acceleration == null) {
@@ -335,7 +341,7 @@ public class MetaballController : MonoBehaviour {
 		sphereRigidbodies[index].interpolation = RigidbodyInterpolation.Interpolate;
 	}
 
-	private int GetIndexInGrid(int x, int y, int z) {
+	private int GetCellIndex(int x, int y, int z) {
 		return z * GRID_DIVISION * GRID_DIVISION + y * GRID_DIVISION + x;
 	}
 }
