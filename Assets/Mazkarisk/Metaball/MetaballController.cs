@@ -27,15 +27,15 @@ public class MetaballController : MonoBehaviour {
 	const float SPHERE_FORCE_RADIUS = SPHERE_RADIUS * 3f;  // 球の引力・斥力等の影響半径
 	const int GRID_DIVISION = 64; // グリッドの単一軸方向の分割数
 
-	int sphereCount = 2048;
+	int sphereCount = 4096;
 	GameObject[] sphereObjects = new GameObject[MAX_SPHERE_COUNT];
 	Rigidbody[] sphereRigidbodies = new Rigidbody[MAX_SPHERE_COUNT];
 	SphereCollider[] sphereColliders = new SphereCollider[MAX_SPHERE_COUNT];
 
-	List<int>[] sortedSpheres = null;
-	List<Vector3> spherePositions = new List<Vector3>();
-	List<Vector3> sphereVelocities = new List<Vector3>();
-	List<Vector3> sphereAccelerations = new List<Vector3>();
+	List<int>[] sortedSpheres = new List<int>[GRID_DIVISION * GRID_DIVISION * GRID_DIVISION];
+	Vector3[] spherePositions = new Vector3[MAX_SPHERE_COUNT];
+	Vector3[] sphereVelocities = new Vector3[MAX_SPHERE_COUNT];
+	Vector3[] sphereAccelerations = new Vector3[MAX_SPHERE_COUNT];
 
 	void Start() {
 		GetComponent<MeshFilter>().sharedMesh = CreateMeshForFullScreenEffect();
@@ -79,10 +79,6 @@ public class MetaballController : MonoBehaviour {
 
 		// リスポーン処理
 		stopwatch.Restart();
-		spherePositions.Clear();
-		sphereVelocities.Clear();
-		sphereAccelerations.Clear();
-
 		Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
 		Vector3 max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
 		for (var i = 0; i < sphereCount; i++) {
@@ -96,11 +92,13 @@ public class MetaballController : MonoBehaviour {
 
 			min = Vector3.Min(min, position);
 			max = Vector3.Max(max, position);
-			spherePositions.Add(position);
-			sphereVelocities.Add(sphereRigidbodies[i].linearVelocity);
-			sphereAccelerations.Add(Vector3.zero);
+
+			spherePositions[i] = position;
+			sphereVelocities[i] = sphereRigidbodies[i].linearVelocity;
+			sphereAccelerations[i] = Vector3.zero;
 		}
 		stopwatch.Stop();
+		logText += "リスポーン処理の時間 : " + stopwatch.Elapsed.TotalMilliseconds + " ms\n";
 
 		// グリッドの中心と大きさを算出
 		Vector3 gridCenter = (min + max) * 0.5f;
@@ -108,19 +106,14 @@ public class MetaballController : MonoBehaviour {
 		min = gridCenter - wholeGridSize * 0.5f;
 		max = gridCenter + wholeGridSize * 0.5f;
 		Vector3 singleGridSize = wholeGridSize / GRID_DIVISION;
-		logText += "リスポーン処理の時間 : " + stopwatch.Elapsed.TotalMilliseconds + " ms\n";
 
 		// グリッド初期化
 		stopwatch.Restart();
-		if (sortedSpheres == null) {
-			sortedSpheres = new List<int>[GRID_DIVISION * GRID_DIVISION * GRID_DIVISION];
-			for (int i = 0; i < sortedSpheres.Length; i++) {
+		for (int i = 0; i < sortedSpheres.Length; i++) {
+			if (sortedSpheres[i] == null) {
 				sortedSpheres[i] = new List<int>();
 			}
-		} else {
-			for (int i = 0; i < sortedSpheres.Length; i++) {
-				sortedSpheres[i].Clear();
-			}
+			sortedSpheres[i].Clear();
 		}
 		stopwatch.Stop();
 		logText += "グリッド初期化処理の時間 : " + stopwatch.Elapsed.TotalMilliseconds + " ms\n";
@@ -260,9 +253,7 @@ public class MetaballController : MonoBehaviour {
 		}
 		stopwatch.Stop();
 		logText += "加速の適用処理の時間 : " + stopwatch.Elapsed.TotalMilliseconds + " ms\n";
-
 	}
-
 
 	private void OnDrawGizmosSelected() {
 		for (int i = 0; i < sphereCount; i++) {
@@ -284,7 +275,6 @@ public class MetaballController : MonoBehaviour {
 
 	private string logText = "";
 	private void OnGUI() {
-
 		string text = logText;
 
 		// ログのテキストスタイルを設定
@@ -339,7 +329,7 @@ public class MetaballController : MonoBehaviour {
 		sphereRigidbodies[index].position = position;
 		sphereRigidbodies[index].rotation = rotation;
 		sphereRigidbodies[index].mass = 4f / 3f * Mathf.PI * SPHERE_RADIUS * SPHERE_RADIUS * SPHERE_RADIUS * 1000f; // 水の密度を1000kg/(m^3)として計算
-		sphereRigidbodies[index].linearDamping = 1.5f;  // FixedTime設定にもよるが、終端速度は6m/sくらいになる
+		sphereRigidbodies[index].linearDamping = 1.5f;  // FixedTime設定にもよるが、linearDamping = 1.5fの場合、終端速度は6m/sくらいになる
 		sphereRigidbodies[index].linearVelocity = Vector3.down * 6f + Random.insideUnitSphere;
 		sphereRigidbodies[index].angularVelocity = Vector3.zero;
 		sphereRigidbodies[index].interpolation = RigidbodyInterpolation.Interpolate;
